@@ -1,15 +1,11 @@
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const OpenAI = require('openai');
-const ChatSession = require('./models/ChatSession');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-mongoose.connect(process.env.MONGODB_URI);
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -27,37 +23,19 @@ app.post('/api/chat', async (req, res) => {
   const { userId, message, personality } = req.body;
   if (!userId || !message || !personality) return res.status(400).json({ error: 'Missing fields' });
 
-  let session = await ChatSession.findOne({ userId, personality });
-  if (!session) {
-    session = new ChatSession({ userId, personality, messages: [] });
-  }
+  const systemPrompt = PERSONALITIES[personality] || PERSONALITIES.friend;
 
-  // Get last 10 messages
-  const lastMessages = session.messages.slice(-10);
-
-  // System prompt
-  const systemPrompt = { role: "system", content: PERSONALITIES[personality] || PERSONALITIES.friend };
-
-  // Prepare messages for OpenAI
   const messagesForAI = [
-    systemPrompt,
-    ...lastMessages,
+    { role: "system", content: systemPrompt },
     { role: "user", content: message }
   ];
 
-  // Get AI reply
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: messagesForAI
     });
     const aiReply = completion.choices[0].message.content;
-
-    // Save user message and AI reply
-    session.messages.push({ role: "user", content: message });
-    session.messages.push({ role: "assistant", content: aiReply });
-    await session.save();
-
     res.json({ reply: aiReply });
   } catch (err) {
     res.status(500).json({ error: err.message });
